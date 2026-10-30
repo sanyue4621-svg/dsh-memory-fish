@@ -1,0 +1,39 @@
+{
+  "name": "dsh-fish-memory",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Live memory for DeepSeek Harness: survives compaction by storing a raw daily memory outside the context window and replaying a small slice each turn.",
+  "license": "MIT",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "files": [
+    "lib/",
+    "memory.mjs",
+    "assemble.mjs",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "memory",
+    "compaction",
+    "agent"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.1.0"
+  }
+}

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>活记忆 · fish-memory</title>
+<style>
+  :root { color-scheme: dark }
+  * { box-sizing: border-box }
+  body { margin:0; padding:20px 18px 60px; background:#0c1119; color:#e7eefb;
+         font:15px/1.62 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif }
+  h1 { font-size:19px; margin:0 0 3px }
+  .sub { color:#7789a6; font-size:12.5px; margin-bottom:18px }
+  section { background:#111a27; border:1px solid #1e2c42; border-radius:12px; padding:15px 16px; margin-bottom:16px }
+  h2 { font-size:14px; margin:0 0 12px; color:#9db3d3; font-weight:600 }
+  .tools { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px }
+  select, input, button { font:inherit; font-size:13.5px; border-radius:8px; border:1px solid #2a3c57;
+                          background:#0d1521; color:#e7eefb; padding:5px 9px }
+  button { cursor:pointer }
+  button:hover { background:#16202f }
+  button.op { padding:3px 8px; font-size:12px; border-color:#28394f; color:#9db3d3 }
+  button.op:hover { color:#dbe7f8; border-color:#3a5170 }
+  button.danger { border-color:#4d2626; color:#ff9d9d }
+  .pill { display:inline-block; font-size:11px; padding:1px 7px; border-radius:99px; background:#1a2537; color:#8fa6c6; margin-right:5px }
+  .src { font-size:11px; padding:1px 8px; border-radius:99px; margin-right:6px; white-space:nowrap }
+  .src-找 { background:#12314d; color:#7cc0f2 }
+  .src-随 { background:#2a1f45; color:#b9a0f2 }
+  .src-兜 { background:#3d2a12; color:#f2bb7c }
+  .src-情 { background:#3d1a2c; color:#f294bb }
+  .text { font-size:14.5px; color:#e7eefb }
+  .feel { font-size:12.5px; color:#8ea4c4; margin-top:2px }
+  .meta { font-size:11.5px; color:#63799a; margin-top:4px }
+  .bar { height:4px; border-radius:99px; background:#1b2637; margin-top:8px; overflow:hidden }
+  .bar i { display:block; height:100%; border-radius:99px }
+  .item { display:flex; gap:12px; align-items:flex-start; padding:11px 0; border-bottom:1px solid #17222f }
+  .item:last-child { border-bottom:none }
+  .grow { flex:1; min-width:0 }
+  .ops { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; max-width:190px }
+  .empty { color:#5b6f8c; font-size:13px; padding:6px 0 }
+  .inj { background:#0e1725; border:1px solid #22344d; border-radius:10px; padding:10px 12px; margin-bottom:8px }
+  .inj:last-child { margin-bottom:0 }
+  .when { font-size:11.5px; color:#63799a; margin-bottom:6px }
+  .cnt { color:#7789a6; font-size:12.5px; font-weight:400; margin-left:6px }
+</style>
+</head>
+<body>
+
+<h1>活记忆</h1>
+<div class="sub">fish-memory · 每轮最多带一条，越久不想越凉</div>
+
+<section>
+  <h2>刚才注入的</h2>
+  <div id="inject"></div>
+</section>
+
+<section>
+  <div class="tools">
+    <select id="lib" onchange="load()"></select>
+    <select id="status" onchange="load()">
+      <option value="current">活着的</option>
+      <option value="forgotten">遗忘区</option>
+      <option value="doomed">待删</option>
+      <option value="all">全部</option>
+    </select>
+    <input id="q" placeholder="搜一句话" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')load()">
+    <button onclick="load()">刷新</button>
+  </div>
+  <h2>记忆 <span class="cnt" id="cnt"></span></h2>
+  <div id="list"></div>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id)
+let 当前库 = 'all'
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
+}
+function 时间(ms) {
+  if (!ms) return ''
+  const d = new Date(Number(ms))
+  return d.toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
+}
+function 温度色(h) {
+  h = Number(h) || 0
+  if (h >= 0.6) return 'linear-gradient(90deg,#ff8a4c,#ffc46b)'
+  if (h >= 0.3) return 'linear-gradient(90deg,#4c8dff,#7cc6f2)'
+  return 'linear-gradient(90deg,#44566e,#64748b)'
+}
+function 状态名(s) {
+  return { current:'活着', forgotten:'遗忘区', doomed:'待删' }[s] || s
+}
+function 来源标签(src) {
+  if (!src) return ''
+  const c = src.includes('顺着') ? 'src-找' : src.includes('随手') ? 'src-随' : src.includes('兜底') ? 'src-兜' : src.includes('情绪') ? 'src-情' : 'src-随'
+  return '<span class="src ' + c + '">' + esc(src) + '</span>'
+}
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {
+    method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body)
+  } : undefined)
+  return await r.json()
+}
+
+async function load() {
+  const q = $('q').value.trim()
+  const status = $('status').value
+  当前库 = $('lib').value || 'all'
+
+  const meta = await api('/fish-memory/api/meta')
+  if (meta.ok) {
+    // 库下拉：只在第一次或库变了的时候重建，别把选择冲掉
+    const 库们 = meta.库 || []
+    const html = '<option value="all">全部库</option>' + 库们.map((x) =>
+      '<option value="' + esc(x.lib) + '"' + (x.lib === 当前库 ? ' selected' : '') + '>' +
+      esc(x.lib) + '（' + x.c + '）</option>').join('')
+    if ($('lib').innerHTML !== html) $('lib').innerHTML = html
+    $('lib').value = 当前库
+
+    renderInject(meta.最近注入)
+  }
+
+  const data = await api('/fish-memory/api/list?lib=' + encodeURIComponent(当前库) +
+    '&status=' + encodeURIComponent(status) + '&q=' + encodeURIComponent(q))
+  if (!data.ok) { $('list').innerHTML = '<div class="empty">' + esc(data.说 || '读不到') + '</div>'; return }
+  $('cnt').textContent = '共 ' + data.总 + ' 条'
+  $('list').innerHTML = data.条.length ? data.条.map(一条).join('') : '<div class="empty">这个筛选下没有</div>'
+}
+
+function 一条(r) {
+  const h = Number(r.heat) || 0
+  const 感 = r.feel ? '<div class="feel">（当时：' + esc(r.feel) + '）</div>' : ''
+  const 情 = r.mood ? '<span class="pill">' + esc(r.mood) + '</span>' : ''
+  const 已沉 = r.status !== 'current' ? '<span class="pill">' + esc(状态名(r.status)) + '</span>' : ''
+  return '<div class="item">' +
+    '<div class="grow">' +
+      '<div class="text">' + esc(r.text) + '</div>' + 感 +
+      '<div class="meta"><span class="pill">#' + r.id + '</span><span class="pill">' + esc(r.lib) + '</span>' +
+        (r.hits ? '<span class="pill">想起过 ' + r.hits + ' 次</span>' : '') + 情 + 已沉 +
+        esc(时间(r.when_at || r.created_at)) + '</div>' +
+      '<div class="bar"><i style="width:' + Math.round(Math.min(1, h) * 100) + '%;background:' + 温度色(h) + '"></i></div>' +
+    '</div>' +
+    '<div class="ops">' +
+      '<button class="op" onclick="act(' + r.id + ',\'升温\')">+ 温</button>' +
+      '<button class="op" onclick="act(' + r.id + ',\'降温\')">- 温</button>' +
+      (r.status === 'forgotten' ? '<button class="op" onclick="act(' + r.id + ',\'捞回\')">捞回来</button>' : '') +
+      '<button class="op" onclick="改库(' + r.id + ')">改库</button>' +
+      '<button class="op danger" onclick="act(' + r.id + ',\'待删\')">待删</button>' +
+    '</div>' +
+  '</div>'
+}
+
+function renderInject(j) {
+  if (!j || !j.条目 || !j.条目.length) {
+    $('inject').innerHTML = '<div class="empty">还没有注入记录（下一轮开始记）</div>'
+    return
+  }
+  $('inject').innerHTML =
+    '<div class="when">' + esc(时间(j.at)) + ' · 第 ' + (j.turn == null ? '?' : j.turn) + ' 轮 · 库 ' + esc(j.库 || '') + '</div>' +
+    j.条目.map((x) => {
+      const h = Number(x.heat) || 0
+      const 感 = x.feel ? ' <span class="feel">（' + esc(x.feel) + '）</span>' : ''
+      return '<div class="inj">' + 来源标签(x.来源) +
+        '<span class="text">' + esc(x.text) + '</span>' + 感 +
+        '<div class="bar" style="margin-top:6px"><i style="width:' + Math.round(Math.min(1, h) * 100) + '%;background:' + 温度色(h) + '"></i></div>' +
+      '</div>'
+    }).join('')
+}
+
+async function act(id, 动作, 值) {
+  const r = await api('/fish-memory/api/act', { id, 动作, 值 })
+  if (!r.ok) return alert(r.说 || '没成')
+  load()
+}
+
+async function 改库(id) {
+  const name = prompt('改到哪个库？（default 主库 / scratch 试验库）')
+  if (!name || !name.trim()) return
+  await act(id, '改库', name.trim())
+}
+
+load()
+</script>
+</body>
+</html>
