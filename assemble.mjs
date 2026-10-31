@@ -1,4 +1,4 @@
-﻿// fish-memory —— 每轮拼装
+// fish-memory —— 每轮拼装
 //
 // 作用：拼出「这一轮该带的记忆」那一段文本，交给插件塞进上下文。
 //
@@ -37,6 +37,7 @@ export function 拼记忆段({
   随手条数 = 0,
   排除 = null,
   一天内不塞 = 86400000,
+  压缩界 = 0,
   收集 = null,
 } = {}) {
   // 没人告诉我这轮什么情绪时，用上一轮压记忆时判的那个
@@ -44,7 +45,15 @@ export function 拼记忆段({
 
   const 排除集 = new Set(Array.isArray(排除) ? 排除 : [])
   const 太新 = Date.now() - Number(一天内不塞 || 0)
-  const 能用 = (r) => !!r && !排除集.has(r.id) && Number(r.created_at || 0) < 太新
+  // 压缩分界：压缩之前的才塞（压缩之后说的一定还在上下文里）。
+  // 没给分界时退回「一天内不塞」。
+  const 压界 = Number(压缩界) || 0
+  const 能用 = (r) => {
+    if (!r || 排除集.has(r.id)) return false
+    const 记时 = Number(r.when_at || r.created_at || 0)
+    if (压界 > 0) return 记时 < 压界
+    return 记时 < 太新
+  }
 
   // 相关的那几条连遗忘区一起搜：沉下去的，提起来还能翻出来。
   // 多要几条再筛（排除的、太新的会占名额），筛完只留 相关条数。
